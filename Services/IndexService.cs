@@ -8,19 +8,23 @@ using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Store;
 using Lucene.Net.Util;
-using LuceneSearchWPFApp.Configuration;
+using LuceneSearchWPFApp.Services.Interfaces; // 引入介面
+//using LuceneSearchWPFApp.Configuration; // 移除對舊 AppSettings 的引用
 using LuceneSearchWPFApp.Utilities;
 
 namespace LuceneSearchWPFApp.Services
 {
-    public class IndexService
+    public class IndexService : IIndexService // 實現 IIndexService 介面
     {
         private readonly string _indexPath;
         private readonly LuceneVersion _luceneVersion = LuceneVersion.LUCENE_48;
+        private readonly IConfigurationService _configurationService; // 注入配置服務
 
-        public IndexService()
+        // 透過建構子注入 IConfigurationService
+        public IndexService(IConfigurationService configurationService)
         {
-            _indexPath = AppSettings.Instance.Lucene.GetFullIndexPath();
+            _configurationService = configurationService;
+            _indexPath = _configurationService.GetFullIndexPath(); // 從配置服務獲取路徑
         }
 
         public async Task CreateIndexAsync(string folderPath, string fileFilterKeyword, IProgress<string> progress)
@@ -32,17 +36,15 @@ namespace LuceneSearchWPFApp.Services
 
             await Task.Run(() =>
             {
-                // Ensure index directory exists
                 var dirInfo = new DirectoryInfo(_indexPath);
                 if (!dirInfo.Exists) dirInfo.Create();
 
                 using (var directory = FSDirectory.Open(dirInfo))
                 using (var analyzer = new SmartChineseAnalyzer(_luceneVersion))
                 {
-                    // Create an IndexWriterConfig with SmartChineseAnalyzer
                     var config = new IndexWriterConfig(_luceneVersion, analyzer)
                     {
-                        OpenMode = OpenMode.CREATE_OR_APPEND // 保留舊索引，新增或更新文件
+                        OpenMode = OpenMode.CREATE // 每次重建索引都清空舊資料，避免重複
                     };
 
                     using (var writer = new IndexWriter(directory, config))
@@ -61,12 +63,10 @@ namespace LuceneSearchWPFApp.Services
                             {
                                 int lineIndex = 0;
 
-                                // 解析檔名中的日期
                                 var fileDate = DateParser.ParseDateFromFileName(fileName);
                                 string fileDateStr = fileDate?.ToString("yyyyMMdd") ?? "";
 
-                                // 使用設定檔中的編碼設定
-                                var encodingCodePage = AppSettings.Instance.LogFiles.EncodingCodePage;
+                                var encodingCodePage = _configurationService.GetLogFileEncodingCodePage(); // 從配置服務獲取編碼頁
                                 var encoding = Encoding.GetEncoding(encodingCodePage,
                                     new EncoderReplacementFallback("?"),
                                     new DecoderReplacementFallback("?"));
@@ -79,31 +79,16 @@ namespace LuceneSearchWPFApp.Services
                                         continue;
                                     }
 
-                                    // 嘗試從 log 內容提取時間戳記
                                     var timestamp = DateParser.ExtractTimestampFromLog(lineContent);
 
                                     var doc = new Document
                                     {
-                                        // Store file name (Stored, Not Analyzed)
                                         new StringField("FileName", fileName, Field.Store.YES),
-
-                                        // Store full file path (Stored, Not Analyzed)
                                         new StringField("FilePath", filePath, Field.Store.YES),
-
-                                        // Store line number (Stored, Not Analyzed)
                                         new StringField("LineNumber", lineIndex.ToString(), Field.Store.YES),
-
-                                        // Store content for display (Stored, Not Analyzed)
                                         new StoredField("Content", lineContent),
-
-                                        // Store file date (Stored, Indexed for range queries)
                                         new StringField("FileDate", fileDateStr, Field.Store.YES),
-
-                                        // Store timestamp from log content (if exists)
                                         new StringField("LogTimestamp", timestamp ?? "", Field.Store.YES),
-
-                                        // Index content for search (Analyzed, Not Stored - we store it in "Content" field)
-                                        // TextField is tokenized and indexed.
                                         new TextField("TokenizedContent", lineContent, Field.Store.NO)
                                     };
 

@@ -10,30 +10,30 @@ using Lucene.Net.Search;
 using Lucene.Net.Store;
 using Lucene.Net.Util;
 using LuceneSearchWPFApp.Models;
-using LuceneSearchWPFApp.Configuration;
+using LuceneSearchWPFApp.Services.Interfaces; // 引入介面
+//using LuceneSearchWPFApp.Configuration; // 移除對舊 AppSettings 的引用
 using LuceneSearchWPFApp.Utilities;
 
 namespace LuceneSearchWPFApp.Services
 {
-    public class SearchService : IDisposable
+    public class SearchService : ISearchService // 實現 ISearchService 介面
     {
         private readonly string _indexPath;
         private readonly LuceneVersion _luceneVersion = LuceneVersion.LUCENE_48;
+        private readonly IConfigurationService _configurationService; // 注入配置服務
 
-        // 快取 DirectoryReader 和 IndexSearcher 以提升效能
         private FSDirectory _directory;
         private DirectoryReader _reader;
         private IndexSearcher _searcher;
         private readonly object _lock = new object();
 
-        public SearchService()
+        // 透過建構子注入 IConfigurationService
+        public SearchService(IConfigurationService configurationService) 
         {
-            _indexPath = AppSettings.Instance.Lucene.GetFullIndexPath();
+            _configurationService = configurationService;
+            _indexPath = _configurationService.GetFullIndexPath(); // 從配置服務獲取路徑
         }
 
-        /// <summary>
-        /// 初始化或重新整理 IndexSearcher（索引更新後需要呼叫）
-        /// </summary>
         private void EnsureSearcherInitialized()
         {
             lock (_lock)
@@ -49,7 +49,6 @@ namespace LuceneSearchWPFApp.Services
                 }
                 else
                 {
-                    // 檢查索引是否有更新，如果有則重新開啟 reader
                     var newReader = DirectoryReader.OpenIfChanged(_reader);
                     if (newReader != null)
                     {
@@ -61,38 +60,35 @@ namespace LuceneSearchWPFApp.Services
             }
         }
 
-        public async Task<List<SearchResult>> SearchAsync(string keyword, int? limit = null, DateTime? startDate = null, DateTime? endDate = null)
+        public async Task<(List<SearchResult> Results, int TotalHits)> SearchAsync(string keyword, int? limit = null, DateTime? startDate = null, DateTime? endDate = null)
         {
             if (string.IsNullOrWhiteSpace(keyword))
-                return new List<SearchResult>();
+                return (new List<SearchResult>(), 0);
 
-            // 使用設定檔中的預設值
-            int maxResults = limit ?? AppSettings.Instance.Lucene.MaxSearchResults;
+            int maxResults = limit ?? _configurationService.GetMaxSearchResults(); // 從配置服務獲取最大搜尋結果數
 
             return await Task.Run(() =>
             {
                 var results = new List<SearchResult>();
+                int totalHits = 0;
 
                 if (!System.IO.Directory.Exists(_indexPath))
                 {
-                    return results; // No index exists
+                    return (results, 0);
                 }
 
                 try
                 {
-                    // 使用快取的 searcher
                     EnsureSearcherInitialized();
 
                     if (_searcher == null)
-                        return results;
+                        return (results, 0);
 
                     using (var analyzer = new SmartChineseAnalyzer(_luceneVersion))
                     {
-                        // 建立關鍵字查詢
                         var parser = new QueryParser(_luceneVersion, "TokenizedContent", analyzer);
                         Query keywordQuery = parser.Parse(keyword);
 
-                        // 如果有日期範圍，建立組合查詢
                         Query finalQuery = keywordQuery;
                         if (startDate.HasValue || endDate.HasValue)
                         {
@@ -101,7 +97,6 @@ namespace LuceneSearchWPFApp.Services
                                 { keywordQuery, Occur.MUST }
                             };
 
-                            // 建立日期範圍查詢
                             string startDateStr = startDate?.ToString("yyyyMMdd") ?? "00000000";
                             string endDateStr = endDate?.ToString("yyyyMMdd") ?? "99999999";
 
@@ -109,8 +104,8 @@ namespace LuceneSearchWPFApp.Services
                                 "FileDate",
                                 startDateStr,
                                 endDateStr,
-                                true,  // includeLower
-                                true   // includeUpper
+                                true,
+                                true
                             );
 
                             booleanQuery.Add(dateRangeQuery, Occur.MUST);
@@ -118,12 +113,12 @@ namespace LuceneSearchWPFApp.Services
                         }
 
                         var topDocs = _searcher.Search(finalQuery, maxResults);
+                        totalHits = topDocs.TotalHits; // 獲取總命中數
 
                         foreach (var scoreDoc in topDocs.ScoreDocs)
                         {
                             var doc = _searcher.Doc(scoreDoc.Doc);
 
-                            // 解析日期
                             string fileDateStr = doc.Get("FileDate");
                             DateTime? fileDate = null;
                             if (!string.IsNullOrEmpty(fileDateStr) && fileDateStr.Length == 8)
@@ -140,13 +135,11 @@ namespace LuceneSearchWPFApp.Services
                                 }
                             }
 
-                            // 如果檔名中沒有日期，嘗試從 log 的時間戳記解析日期，減少顯示「日期未知」的情況
                             if (!fileDate.HasValue)
                             {
                                 var ts = doc.Get("LogTimestamp");
                                 if (!string.IsNullOrEmpty(ts))
                                 {
-                                    // 支援多種常見格式
                                     var formats = new[] { "yyyy-MM-dd HH:mm:ss", "yyyy/MM/dd HH:mm:ss", "yyyyMMdd HH:mm:ss", "yyyy-MM-ddTHH:mm:ss" };
                                     if (DateTime.TryParseExact(ts, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsed))
                                     {
@@ -154,7 +147,6 @@ namespace LuceneSearchWPFApp.Services
                                     }
                                     else
                                     {
-                                        // 嘗試一般解析（容錯）
                                         if (DateTime.TryParse(ts, out DateTime parsed2))
                                             fileDate = parsed2.Date;
                                     }
@@ -179,13 +171,10 @@ namespace LuceneSearchWPFApp.Services
                     throw;
                 }
 
-                return results;
+                return (results, totalHits);
             });
         }
 
-        /// <summary>
-        /// 釋放資源
-        /// </summary>
         public void Dispose()
         {
             _reader?.Dispose();

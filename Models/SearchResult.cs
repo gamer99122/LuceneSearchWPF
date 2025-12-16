@@ -1,5 +1,5 @@
 using System;
-using LuceneSearchWPFApp.Utilities;
+// Removed LuceneSearchWPFApp.Utilities as it's no longer needed for DateDisplay
 
 namespace LuceneSearchWPFApp.Models
 {
@@ -24,32 +24,9 @@ namespace LuceneSearchWPFApp.Models
         /// </summary>
         public string FilePath { get; set; }
 
-        /// <summary>
-        /// 日期顯示文字（用於 DataGrid 顯示）
-        /// </summary>
-        public string DateDisplay
-        {
-            get
-            {
-                return DateParser.FormatDate(FileDate);
-            }
-        }
-
         public override string ToString()
         {
             return $"[{FileName}]-行號[{LineNumber}]: {Content}";
-        }
-
-        /// <summary>
-        /// 格式化顯示（包含日期）
-        /// </summary>
-        public string ToStringWithDate()
-        {
-            string datePrefix = FileDate.HasValue
-                ? $"[{FileDate.Value:yyyy-MM-dd}]"
-                : "[日期未知]";
-
-            return $"{datePrefix}[{FileName}]-行號[{LineNumber}]: {Content}";
         }
     }
 }
