@@ -2,7 +2,7 @@ using System.Windows;
 using LuceneSearchWPFApp.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace LuceneSearchWPFApp
+namespace LuceneSearchWPFApp.Views
 {
     public partial class MainWindow : Window
     {
