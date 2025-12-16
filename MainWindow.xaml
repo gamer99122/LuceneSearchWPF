@@ -1,0 +1,115 @@
+<Window x:Class="LuceneSearchWPFApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:LuceneSearchWPFApp"
+        mc:Ignorable="d"
+        Title="LuceneSearch WPF" Height="700" Width="1024">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Control Panel -->
+        <Border Grid.Row="0" Padding="10" Background="#f0f0f0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Row 0: 索引設定 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button x:Name="btnCreateIndex" Content="建立索引" Width="99" Height="35" Click="btnCreateIndex_Click"/>
+
+                    <TextBlock Text="Filter" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <ComboBox x:Name="cmbFilter" Width="120" Height="27" VerticalAlignment="Center"
+                              IsEditable="True" IsTextSearchEnabled="True"/>
+
+                    <TextBlock Text="Path" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <TextBox x:Name="txtPath" Width="300" Height="27" VerticalAlignment="Center" Text="C:\HIS2\log"/>
+
+                    <TextBlock x:Name="lblFileName" Text=" 檔案" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                </StackPanel>
+
+                <!-- Row 1: 搜尋關鍵字 -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="搜尋關鍵字:" VerticalAlignment="Center" Width="80"/>
+                    <TextBox x:Name="txtSearch" Width="200" Height="27" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Button x:Name="btnSearch" Content="搜尋" Width="80" Height="35" Click="btnSearch_Click" Background="#4CAF50" Foreground="White"/>
+                </StackPanel>
+
+                <!-- Row 2: 日期篩選 -->
+                <Grid Grid.Row="2" Margin="0,0,0,10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 第一行：日期範圍選擇 -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                        <CheckBox x:Name="chkEnableDateFilter" Content="啟用日期篩選" VerticalAlignment="Center" Width="110" Checked="chkEnableDateFilter_Changed" Unchecked="chkEnableDateFilter_Changed"/>
+                        <TextBlock Text="開始日期:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                        <DatePicker x:Name="dpStartDate" Width="120" Height="27" VerticalAlignment="Center"/>
+                        <TextBlock Text="結束日期:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                        <DatePicker x:Name="dpEndDate" Width="120" Height="27" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- 第二行：快速選擇按鈕 -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="110,0,0,0">
+                        <TextBlock Text="快速選擇:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="#666"/>
+                        <Button x:Name="btnLast3Days" Content="最近 3 天" Width="80" Height="25" Margin="0,0,5,0" Click="btnLast3Days_Click"
+                                Background="#E3F2FD" BorderBrush="#2196F3" Foreground="#1976D2"/>
+                        <Button x:Name="btnLast7Days" Content="最近 7 天" Width="80" Height="25" Margin="0,0,5,0" Click="btnLast7Days_Click"
+                                Background="#E3F2FD" BorderBrush="#2196F3" Foreground="#1976D2"/>
+                        <Button x:Name="btnLast30Days" Content="最近 30 天" Width="80" Height="25" Margin="0,0,5,0" Click="btnLast30Days_Click"
+                                Background="#E3F2FD" BorderBrush="#2196F3" Foreground="#1976D2"/>
+                        <Button x:Name="btnCustomDate" Content="自訂" Width="60" Height="25" Click="btnCustomDate_Click"
+                                Background="#FFF3E0" BorderBrush="#FF9800" Foreground="#F57C00"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Row 3: 顯示選項 -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal">
+                    <CheckBox x:Name="chkGroupByDate" Content="依日期分組顯示" VerticalAlignment="Center" IsChecked="True"/>
+                    <TextBlock x:Name="lblFindCnt" Text="筆數: 0" VerticalAlignment="Center" Margin="20,0,0,0" FontWeight="Bold"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Result Area -->
+        <DataGrid x:Name="dgResults" Grid.Row="1" Margin="10"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Single"
+                  GridLinesVisibility="Horizontal"
+                  AlternatingRowBackground="#F5F5F5"
+                  RowHeight="30"
+                  FontFamily="Microsoft JhengHei UI"
+                  FontSize="12"
+                  MouseDoubleClick="dgResults_MouseDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="日期" Binding="{Binding DateDisplay}" Width="100"/>
+                <DataGridTextColumn Header="時間戳記" Binding="{Binding LogTimestamp}" Width="140"/>
+                <DataGridTextColumn Header="檔案名稱" Binding="{Binding FileName}" Width="200"/>
+                <DataGridTextColumn Header="行號" Binding="{Binding LineNumber}" Width="60"/>
+                <DataGridTextColumn Header="內容" Binding="{Binding Content}" Width="*"/>
+            </DataGrid.Columns>
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="📂 用 Notepad++ 開啟" Click="MenuItem_OpenInNotepadPlusPlus_Click"/>
+                    <MenuItem Header="📂 用記事本開啟" Click="MenuItem_OpenInNotepad_Click"/>
+                    <Separator/>
+                    <MenuItem Header="📋 複製此行內容" Click="MenuItem_CopyContent_Click"/>
+                    <MenuItem Header="📋 複製檔案路徑" Click="MenuItem_CopyFilePath_Click"/>
+                    <Separator/>
+                    <MenuItem Header="📊 只顯示此檔案的結果" Click="MenuItem_FilterByFile_Click"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+        </DataGrid>
+    </Grid>
+</Window>
