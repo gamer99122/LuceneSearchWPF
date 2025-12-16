@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -32,6 +33,9 @@ namespace LuceneSearchWPFApp
             // 初始化 Filter 下拉選單
             InitializeFilterComboBox();
 
+            // 當搜尋關鍵字改變時，動態更新高亮
+            txtSearch.TextChanged += TxtSearch_TextChanged;
+
             // 初始化日期選擇器：預設為最近 7 天
             dpEndDate.SelectedDate = DateTime.Today;
             dpStartDate.SelectedDate = DateTime.Today.AddDays(-7);
@@ -56,16 +60,34 @@ namespace LuceneSearchWPFApp
         /// </summary>
         private void InitializeFilterComboBox()
         {
-            // 從設定檔讀取 Filter 選項
-            var filterOptions = AppSettings.Instance.UI.FileFilterOptions;
+            cmbFilter.Items.Clear();
 
-            if (filterOptions != null && filterOptions.Count > 0)
+            // 優先根據 txtPath 的資料夾位置自動偵測可用的檔案名稱
+            string path = txtPath.Text?.Trim();
+            System.Collections.Generic.List<string> options = null;
+
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
             {
-                foreach (var option in filterOptions)
-                {
-                    cmbFilter.Items.Add(option);
-                }
+                options = GetFilterOptionsFromPath(path);
             }
+
+            // fallback: 使用 appsettings 中的選項
+            if (options == null || options.Count == 0)
+            {
+                var filterOptions = AppSettings.Instance.UI.FileFilterOptions;
+                if (filterOptions != null && filterOptions.Count > 0)
+                    options = filterOptions.ToList();
+            }
+
+            if (options == null)
+                options = new System.Collections.Generic.List<string>();
+
+            // 確保「全部」在最前面
+            if (!options.Contains("全部"))
+                options.Insert(0, "全部");
+
+            foreach (var option in options)
+                cmbFilter.Items.Add(option);
 
             // 設定預設值
             string defaultFilter = AppSettings.Instance.UI.DefaultFileFilter;
@@ -77,6 +99,54 @@ namespace LuceneSearchWPFApp
             {
                 cmbFilter.SelectedIndex = 0; // 預設選第一個（全部）
             }
+        }
+
+        /// <summary>
+        /// 從資料夾中分析可用的 filter 選項（移除日期後綴與常見副檔名）
+        /// </summary>
+        private System.Collections.Generic.List<string> GetFilterOptionsFromPath(string folderPath)
+        {
+            try
+            {
+                var files = Directory.GetFiles(folderPath);
+                var names = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var rx = new Regex(@"^(?<name>.*?)(?:\.log|\.txt)?(?:\.?\d{8})?$", RegexOptions.IgnoreCase);
+
+                foreach (var f in files)
+                {
+                    var fileName = Path.GetFileName(f);
+                    var m = rx.Match(fileName);
+                    if (m.Success)
+                    {
+                        var n = m.Groups["name"].Value;
+                        if (!string.IsNullOrWhiteSpace(n))
+                            names.Add(n);
+                    }
+                    else
+                    {
+                        // fallback: 使用完整檔名（移除副檔名）
+                        names.Add(Path.GetFileNameWithoutExtension(fileName));
+                    }
+                }
+
+                return names.OrderBy(s => s).ToList();
+            }
+            catch
+            {
+                return new System.Collections.Generic.List<string>();
+            }
+        }
+
+        // 當使用者填寫完 Path 後刷新 filter 選項
+        private void txtPath_LostFocus(object sender, RoutedEventArgs e)
+        {
+            InitializeFilterComboBox();
+        }
+
+        // 手動刷新 Filter 按鈕
+        private void btnRefreshFilters_Click(object sender, RoutedEventArgs e)
+        {
+            InitializeFilterComboBox();
         }
 
         private void chkEnableDateFilter_Changed(object sender, RoutedEventArgs e)
@@ -264,6 +334,91 @@ namespace LuceneSearchWPFApp
 
         #region DataGrid 事件處理
 
+        // 當 DataGrid 建立每一列時，為內容欄位進行關鍵字高亮處理
+        private void dgResults_LoadingRow(object sender, System.Windows.Controls.DataGridRowEventArgs e)
+        {
+            try
+            {
+                var row = e.Row;
+                var result = row.Item as SearchResult;
+                if (result == null) return;
+
+                // 取得搜尋關鍵字
+                string keyword = txtSearch.Text ?? string.Empty;
+
+                // 在這一列中尋找 Tag 為 "HighlightTarget" 的 TextBlock
+                var txtBlock = FindVisualChildByTag<System.Windows.Controls.TextBlock>(row, "HighlightTarget");
+                if (txtBlock != null)
+                {
+                    UpdateTextBlockHighlight(txtBlock, result.Content ?? string.Empty, keyword);
+                }
+            }
+            catch { }
+        }
+
+        // 幫助函式：在 DataGridRow 的視覺樹中尋找具有特定 Tag 的元素
+        private T FindVisualChildByTag<T>(System.Windows.DependencyObject parent, object tag) where T : System.Windows.DependencyObject
+        {
+            if (parent == null) return null;
+            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is T tChild && (child as System.Windows.FrameworkElement)?.Tag?.Equals(tag) == true)
+                    return tChild as T;
+
+                var found = FindVisualChildByTag<T>(child, tag);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        // 更新 TextBlock 的 Inlines，將關鍵字以黃色背景標示
+        private void UpdateTextBlockHighlight(System.Windows.Controls.TextBlock tb, string content, string keyword)
+        {
+            tb.Inlines.Clear();
+            if (string.IsNullOrEmpty(keyword))
+            {
+                tb.Inlines.Add(new System.Windows.Documents.Run(content));
+                return;
+            }
+
+            try
+            {
+                var tokens = Regex.Split(keyword.Trim(), "\\s+");
+                Array.Sort(tokens, (a, b) => b.Length.CompareTo(a.Length));
+                string pattern = string.Join("|", Array.ConvertAll(tokens, t => Regex.Escape(t)));
+                if (string.IsNullOrEmpty(pattern))
+                {
+                    tb.Inlines.Add(new System.Windows.Documents.Run(content));
+                    return;
+                }
+
+                var rx = new Regex(pattern, RegexOptions.IgnoreCase);
+                int lastIndex = 0;
+                foreach (Match m in rx.Matches(content))
+                {
+                    if (m.Index > lastIndex)
+                    {
+                        tb.Inlines.Add(new System.Windows.Documents.Run(content.Substring(lastIndex, m.Index - lastIndex)));
+                    }
+                    var span = new System.Windows.Documents.Span(new System.Windows.Documents.Run(content.Substring(m.Index, m.Length)))
+                    {
+                        Background = System.Windows.Media.Brushes.Yellow
+                    };
+                    tb.Inlines.Add(span);
+                    lastIndex = m.Index + m.Length;
+                }
+                if (lastIndex < content.Length)
+                    tb.Inlines.Add(new System.Windows.Documents.Run(content.Substring(lastIndex)));
+            }
+            catch
+            {
+                tb.Inlines.Clear();
+                tb.Inlines.Add(new System.Windows.Documents.Run(content));
+            }
+        }
+
         /// <summary>
         /// DataGrid 雙擊事件：開啟 Notepad++ 並跳到指定行
         /// </summary>
@@ -347,6 +502,28 @@ namespace LuceneSearchWPFApp
             {
                 MessageBox.Show($"開啟檔案失敗: {ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void TxtSearch_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            try
+            {
+                string keyword = txtSearch.Text ?? string.Empty;
+                // 更新目前可見列的高亮（效率考量，只更新已產生的視覺列）
+                foreach (var item in dgResults.Items)
+                {
+                    var row = dgResults.ItemContainerGenerator.ContainerFromItem(item) as System.Windows.Controls.DataGridRow;
+                    if (row == null) continue;
+
+                    var result = row.Item as SearchResult;
+                    if (result == null) continue;
+
+                    var txtBlock = FindVisualChildByTag<System.Windows.Controls.TextBlock>(row, "HighlightTarget");
+                    if (txtBlock != null)
+                        UpdateTextBlockHighlight(txtBlock, result.Content ?? string.Empty, keyword);
+                }
+            }
+            catch { }
         }
 
         #endregion

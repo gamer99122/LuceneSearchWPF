@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using System.Globalization;
 using Lucene.Net.Analysis.Cn.Smart;
 using Lucene.Net.Index;
 using Lucene.Net.QueryParsers.Classic;
@@ -136,6 +137,27 @@ namespace LuceneSearchWPFApp.Services
                                         fileDate = new DateTime(year, month, day);
                                     }
                                     catch { }
+                                }
+                            }
+
+                            // 如果檔名中沒有日期，嘗試從 log 的時間戳記解析日期，減少顯示「日期未知」的情況
+                            if (!fileDate.HasValue)
+                            {
+                                var ts = doc.Get("LogTimestamp");
+                                if (!string.IsNullOrEmpty(ts))
+                                {
+                                    // 支援多種常見格式
+                                    var formats = new[] { "yyyy-MM-dd HH:mm:ss", "yyyy/MM/dd HH:mm:ss", "yyyyMMdd HH:mm:ss", "yyyy-MM-ddTHH:mm:ss" };
+                                    if (DateTime.TryParseExact(ts, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsed))
+                                    {
+                                        fileDate = parsed.Date;
+                                    }
+                                    else
+                                    {
+                                        // 嘗試一般解析（容錯）
+                                        if (DateTime.TryParse(ts, out DateTime parsed2))
+                                            fileDate = parsed2.Date;
+                                    }
                                 }
                             }
 

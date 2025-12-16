@@ -25,13 +25,14 @@
                 <!-- Row 0: 索引設定 -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                     <Button x:Name="btnCreateIndex" Content="建立索引" Width="99" Height="35" Click="btnCreateIndex_Click"/>
+                    <Button x:Name="btnRefreshFilters" Content="刷新 Filter" Width="99" Height="35" Margin="10,0,0,0" Click="btnRefreshFilters_Click"/>
 
                     <TextBlock Text="Filter" VerticalAlignment="Center" Margin="10,0,5,0"/>
                     <ComboBox x:Name="cmbFilter" Width="120" Height="27" VerticalAlignment="Center"
                               IsEditable="True" IsTextSearchEnabled="True"/>
 
                     <TextBlock Text="Path" VerticalAlignment="Center" Margin="10,0,5,0"/>
-                    <TextBox x:Name="txtPath" Width="300" Height="27" VerticalAlignment="Center" Text="C:\HIS2\log"/>
+                    <TextBox x:Name="txtPath" Width="300" Height="27" VerticalAlignment="Center" Text="C:\HIS2\log" LostFocus="txtPath_LostFocus"/>
 
                     <TextBlock x:Name="lblFileName" Text=" 檔案" VerticalAlignment="Center" Margin="10,0,0,0"/>
                 </StackPanel>
@@ -91,13 +92,20 @@
                   RowHeight="30"
                   FontFamily="Microsoft JhengHei UI"
                   FontSize="12"
+                  LoadingRow="dgResults_LoadingRow"
                   MouseDoubleClick="dgResults_MouseDoubleClick">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="日期" Binding="{Binding DateDisplay}" Width="100"/>
                 <DataGridTextColumn Header="時間戳記" Binding="{Binding LogTimestamp}" Width="140"/>
                 <DataGridTextColumn Header="檔案名稱" Binding="{Binding FileName}" Width="200"/>
                 <DataGridTextColumn Header="行號" Binding="{Binding LineNumber}" Width="60"/>
-                <DataGridTextColumn Header="內容" Binding="{Binding Content}" Width="*"/>
+                <DataGridTemplateColumn Header="內容" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Tag="HighlightTarget" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Text="{Binding Content}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
             <DataGrid.ContextMenu>
                 <ContextMenu>
