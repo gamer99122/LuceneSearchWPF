@@ -246,6 +246,7 @@ namespace LuceneSearchWPFApp.Services
 
                     int totalProcessedFiles = 0;
                     object progressLock = new object();
+                    var validTempDirs = new ConcurrentBag<string>(); // 追蹤有效的臨時索引目錄
 
                     // 並行執行多個 IndexWriter
                     Parallel.For(0, parallelWriters, writerIndex =>
@@ -298,6 +299,9 @@ namespace LuceneSearchWPFApp.Services
 
                                 progress?.Report($"Writer#{writerIndex} committing {myFiles.Count} files...");
                                 tempWriter.Commit();
+
+                                // 標記這個臨時目錄為有效（已提交索引）
+                                validTempDirs.Add(tempIndexDirs[writerIndex]);
                             }
                         }
                     });
@@ -308,35 +312,44 @@ namespace LuceneSearchWPFApp.Services
                     // 合併所有臨時索引到最終索引
                     var mergeStart = System.Diagnostics.Stopwatch.StartNew();
 
-                    using (var finalDirectory = FSDirectory.Open(new DirectoryInfo(_indexPath)))
-                    using (var finalAnalyzer = new SmartChineseAnalyzer(_luceneVersion))
+                    // 只合併有效的臨時索引（跳過空的）
+                    if (validTempDirs.Count > 0)
                     {
-                        var finalConfig = new IndexWriterConfig(_luceneVersion, finalAnalyzer)
+                        using (var finalDirectory = FSDirectory.Open(new DirectoryInfo(_indexPath)))
+                        using (var finalAnalyzer = new SmartChineseAnalyzer(_luceneVersion))
                         {
-                            OpenMode = OpenMode.CREATE_OR_APPEND,
-                            RAMBufferSizeMB = 1024.0
-                        };
-
-                        using (var finalWriter = new IndexWriter(finalDirectory, finalConfig))
-                        {
-                            // 打開所有臨時索引
-                            var tempDirectories = tempIndexDirs.Select(dir => FSDirectory.Open(new DirectoryInfo(dir))).ToArray();
-
-                            try
+                            var finalConfig = new IndexWriterConfig(_luceneVersion, finalAnalyzer)
                             {
-                                // 合併索引
-                                finalWriter.AddIndexes(tempDirectories);
-                                finalWriter.Commit();
-                            }
-                            finally
+                                OpenMode = OpenMode.CREATE_OR_APPEND,
+                                RAMBufferSizeMB = 1024.0
+                            };
+
+                            using (var finalWriter = new IndexWriter(finalDirectory, finalConfig))
                             {
-                                // 關閉臨時目錄
-                                foreach (var tempDir in tempDirectories)
+                                // 只打開有效的臨時索引目錄
+                                var tempDirectories = validTempDirs.Select(dir => FSDirectory.Open(new DirectoryInfo(dir))).ToArray();
+
+                                try
                                 {
-                                    tempDir.Dispose();
+                                    // 合併索引
+                                    progress?.Report($"Merging {validTempDirs.Count} indexes...");
+                                    finalWriter.AddIndexes(tempDirectories);
+                                    finalWriter.Commit();
+                                }
+                                finally
+                                {
+                                    // 關閉臨時目錄
+                                    foreach (var tempDir in tempDirectories)
+                                    {
+                                        tempDir.Dispose();
+                                    }
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        progress?.Report("No indexes to merge (no files were processed).");
                     }
 
                     mergeStart.Stop();
