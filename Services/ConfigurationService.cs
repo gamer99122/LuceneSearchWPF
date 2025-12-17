@@ -58,7 +58,7 @@ namespace LuceneSearchWPFApp.Services
         public EditorSettings()
         {
             Type = "notepad++";
-            ExecutablePath = @"C:\Program Files\Notepad++\notepad++.exe";
+            ExecutablePath = @"V:\Program Files\Notepad++\notepad++.exe";
             CommandLineFormat = "\"{ExecutablePath}\" -n{LineNumber} \"{FilePath}\"";
             FallbackToNotepad = true;
         }
@@ -127,8 +127,8 @@ namespace LuceneSearchWPFApp.Services
                 },
                 UI = new UISettings
                 {
-                    DefaultLogPath = @"C:\HIS2\log",
-                    DefaultFileFilter = "ICUploadXML"
+                    DefaultLogPath = AppDomain.CurrentDomain.BaseDirectory, // 預設為程式執行目錄，具體路徑請由 appsettings.json 設定
+                    //DefaultFileFilter = "ICUploadXML"
                 },
                 Editor = new EditorSettings()
             };
