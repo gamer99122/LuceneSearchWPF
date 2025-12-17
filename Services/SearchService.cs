@@ -87,6 +87,7 @@ namespace LuceneSearchWPFApp.Services
                     using (var analyzer = new SmartChineseAnalyzer(_luceneVersion))
                     {
                         var parser = new QueryParser(_luceneVersion, "TokenizedContent", analyzer);
+                        parser.DefaultOperator = Operator.AND;
                         Query keywordQuery = parser.Parse(keyword);
 
                         Query finalQuery = keywordQuery;

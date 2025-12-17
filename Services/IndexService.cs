@@ -139,32 +139,32 @@ namespace LuceneSearchWPFApp.Services
 
                             using (var reader = DirectoryReader.Open(directory))
                             {
-                                int maxDoc = reader.MaxDoc;
-                                progress?.Report($"Reading {maxDoc:N0} existing indexed lines...");
-
-                                // 優化：批次讀取並回報進度
-                                int reportInterval = Math.Max(1, maxDoc / 20); // 每 5% 回報一次
-
-                                for (int i = 0; i < maxDoc; i++)
+                                // 優化：直接讀取 "FilePath" 欄位的詞彙表 (Term Dictionary)
+                                // 這比遍歷所有文件快上數千倍，因為它只讀取唯一的檔案路徑
+                                var terms = MultiFields.GetTerms(reader, "FilePath");
+                                if (terms != null)
                                 {
-                                    // 只讀取 FilePath 欄位（不讀取完整 document）
-                                    var doc = reader.Document(i, new HashSet<string> { "FilePath" });
-                                    string path = doc.Get("FilePath");
-                                    if (!string.IsNullOrEmpty(path))
+                                    var termsEnum = terms.GetIterator(null);
+                                    int count = 0;
+                                    while (termsEnum.Next() != null)
                                     {
-                                        existingFilePaths.Add(path);
-                                    }
-
-                                    // 進度回報（每 5% 或最後一筆）
-                                    if (i % reportInterval == 0 || i == maxDoc - 1)
-                                    {
-                                        int percent = (int)((i + 1) * 100.0 / maxDoc);
-                                        progress?.Report($"Reading existing index... {percent}% ({i + 1:N0}/{maxDoc:N0})");
+                                        var bytes = termsEnum.Term;
+                                        if (bytes != null)
+                                        {
+                                            existingFilePaths.Add(bytes.Utf8ToString());
+                                            count++;
+                                        }
+                                        
+                                        // 雖然很快，還是稍微更新一下 UI 避免凍結
+                                        if (count % 1000 == 0)
+                                        {
+                                             progress?.Report($"Reading existing index... Found {count:N0} files");
+                                        }
                                     }
                                 }
 
                                 // 統計有多少個唯一檔案
-                                progress?.Report($"Found {existingFilePaths.Count:N0} already indexed files");
+                                progress?.Report($"Found {existingFilePaths.Count:N0} already indexed files (Instant Scan)");
                             }
                         }
                         catch (Exception ex)
@@ -215,8 +215,8 @@ namespace LuceneSearchWPFApp.Services
                     progress?.Report($"Indexing {totalFiles} files using parallel IndexWriters...");
                     var startTime = System.Diagnostics.Stopwatch.StartNew();
 
-                    // 使用 8 個並行 IndexWriter（充分利用您的 8 核心）
-                    int parallelWriters = 8;
+                    // 使用 12 個並行 IndexWriter（充分利用多核 CPU）
+                    int parallelWriters = 12;
                     progress?.Report($"Using {parallelWriters} parallel IndexWriters to maximize CPU usage");
 
                     // 將檔案分成 N 組
@@ -261,7 +261,14 @@ namespace LuceneSearchWPFApp.Services
                             var tempConfig = new IndexWriterConfig(_luceneVersion, tempAnalyzer)
                             {
                                 OpenMode = OpenMode.CREATE,
-                                RAMBufferSizeMB = 2048.0 // 每個 writer 用 2GB（總共 16GB）
+                                RAMBufferSizeMB = 256.0, // 調降至 256MB，避免 12 個 Writer 撐爆 8GB 記憶體 (總共約 3GB)
+                                UseCompoundFile = false, // 停用複合檔案，減少打包開銷
+                                MaxBufferedDocs = 10000, // 強制每 10000 篇文件刷新一次
+                                MergePolicy = new LogByteSizeMergePolicy
+                                {
+                                    MergeFactor = 10, // 減少合併頻率
+                                    NoCFSRatio = 0.0 // 確保不產生 CFS
+                                }
                             };
 
                             using (var tempWriter = new IndexWriter(tempDirectory, tempConfig))
@@ -451,6 +458,7 @@ namespace LuceneSearchWPFApp.Services
             {
                 string lineContent;
                 int lineIndex = 0;
+                string lastValidTimestamp = ""; // 狀態機：記錄上一個有效的時間戳
 
                 while ((lineContent = reader.ReadLine()) != null)
                 {
@@ -460,14 +468,19 @@ namespace LuceneSearchWPFApp.Services
                         continue;
                     }
 
-                    // 只對可能包含時間戳的行提取
-                    var timestamp = DateParser.ExtractTimestampFromLog(lineContent);
+                    // 嘗試從當前行提取時間戳
+                    var extractedTimestamp = DateParser.ExtractTimestampFromLog(lineContent);
 
-                    // 優化：限制分詞內容長度（中文分詞很慢，只處理前 100 字）
-                    // 大部分日誌的關鍵信息都在前面
-                    string contentForTokenization = lineContent.Length > 100
-                        ? lineContent.Substring(0, 100)
-                        : lineContent;
+                    // 邏輯：
+                    // 1. 如果這一行有時間戳 -> 更新 lastValidTimestamp，並使用它
+                    // 2. 如果這一行沒時間戳 -> 沿用 lastValidTimestamp (可能是空的，也可能是上一行的)
+                    if (!string.IsNullOrEmpty(extractedTimestamp))
+                    {
+                        lastValidTimestamp = extractedTimestamp;
+                    }
+
+                    // 索引完整內容，不進行截斷，確保搜尋精確度
+                    string contentForTokenization = lineContent;
 
                     var doc = new Document
                     {
@@ -476,7 +489,7 @@ namespace LuceneSearchWPFApp.Services
                         new StringField("LineNumber", lineIndex.ToString(), Field.Store.YES),
                         new StoredField("Content", lineContent),
                         new StringField("FileDate", fileDateStr, Field.Store.YES),
-                        new StringField("LogTimestamp", timestamp ?? "", Field.Store.YES),
+                        new StringField("LogTimestamp", lastValidTimestamp, Field.Store.YES), // 使用處理過的時間戳
                         new TextField("TokenizedContent", contentForTokenization, Field.Store.NO)
                     };
 

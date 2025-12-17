@@ -13,10 +13,11 @@ namespace LuceneSearchWPFApp.Utilities
         private static readonly Regex FileNameDateRegex = new Regex(@"\.(txt|log)(\d{8})$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         // 時間戳記正則表達式（靜態編譯）
-        private static readonly Regex TimestampRegex1 = new Regex(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
-        private static readonly Regex TimestampRegex2 = new Regex(@"^(\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
-        private static readonly Regex TimestampRegex3 = new Regex(@"^(\d{8}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
-        private static readonly Regex TimestampRegex4 = new Regex(@"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        // 修改：允許行首有空白 \s*
+        private static readonly Regex TimestampRegex1 = new Regex(@"^\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        private static readonly Regex TimestampRegex2 = new Regex(@"^\s*(\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        private static readonly Regex TimestampRegex3 = new Regex(@"^\s*(\d{8}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        private static readonly Regex TimestampRegex4 = new Regex(@"^\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
 
         /// <summary>
         /// 從檔名解析日期
@@ -76,8 +77,9 @@ namespace LuceneSearchWPFApp.Utilities
             if (string.IsNullOrEmpty(logLine))
                 return null;
 
-            // 快速檢查：如果行首不是數字，直接返回 null（避免不必要的正則匹配）
-            if (logLine.Length < 4 || !char.IsDigit(logLine[0]))
+            // 快速檢查：移除前導空白後，如果長度不足或首字不是數字，才返回 null
+            string trimmedLine = logLine.TrimStart();
+            if (trimmedLine.Length < 4 || !char.IsDigit(trimmedLine[0]))
                 return null;
 
             // 使用靜態編譯的 Regex（按最常見的格式順序檢查）
