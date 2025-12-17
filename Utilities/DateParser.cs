@@ -8,30 +8,33 @@ namespace LuceneSearchWPFApp.Utilities
     /// </summary>
     public static class DateParser
     {
+        // 使用靜態編譯的 Regex 以提升性能（避免重複創建對象）
+        // 支援兩種格式：.txt20251214 (無點) 和 .log20251214
+        private static readonly Regex FileNameDateRegex = new Regex(@"\.(txt|log)(\d{8})$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        // 時間戳記正則表達式（靜態編譯）
+        private static readonly Regex TimestampRegex1 = new Regex(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        private static readonly Regex TimestampRegex2 = new Regex(@"^(\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        private static readonly Regex TimestampRegex3 = new Regex(@"^(\d{8}\s+\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+        private static readonly Regex TimestampRegex4 = new Regex(@"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", RegexOptions.Compiled);
+
         /// <summary>
         /// 從檔名解析日期
         /// 支援格式：
-        /// - AB1B-LAWLIET_Escalator.txt.20251214 → 2025-12-14
-        /// - AB1B-LAWLIET_Escalator.txt → DateTime.Today
+        /// - AB1B-LAWLIET_Escalator.txt20251214 → 2025-12-14 (無點)
+        /// - AB1B-LAWLIET_Escalator.log20251214 → 2025-12-14 (無點)
+        /// - AB1B-LAWLIET_Escalator.txt → DateTime.Today (當天檔案)
         /// </summary>
         public static DateTime? ParseDateFromFileName(string fileName)
         {
             if (string.IsNullOrEmpty(fileName))
                 return null;
 
-            // 檢查是否為當天檔案（沒有日期後綴）
-            if (!fileName.Contains(".txt."))
-            {
-                // 當天檔案，使用今天日期
-                return DateTime.Today;
-            }
-
-            // 解析歷史檔案日期：檔名.txt.YYYYMMDD
-            // 使用正則表達式匹配 8 位數字日期
-            var match = Regex.Match(fileName, @"\.txt\.(\d{8})$");
+            // 解析歷史檔案日期：檔名.txt20251214 或 檔名.log20251214
+            var match = FileNameDateRegex.Match(fileName);
             if (match.Success)
             {
-                string dateStr = match.Groups[1].Value; // 例如：20251214
+                string dateStr = match.Groups[2].Value; // 例如：20251214
 
                 if (dateStr.Length == 8 &&
                     int.TryParse(dateStr.Substring(0, 4), out int year) &&
@@ -50,6 +53,14 @@ namespace LuceneSearchWPFApp.Utilities
                 }
             }
 
+            // 如果沒有匹配到日期，檢查是否為當天檔案（以 .txt 或 .log 結尾，後面沒有數字）
+            if (fileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ||
+                fileName.EndsWith(".log", StringComparison.OrdinalIgnoreCase))
+            {
+                // 當天檔案，使用今天日期
+                return DateTime.Today;
+            }
+
             return null;
         }
 
@@ -65,23 +76,24 @@ namespace LuceneSearchWPFApp.Utilities
             if (string.IsNullOrEmpty(logLine))
                 return null;
 
-            // 嘗試匹配常見的時間戳記格式
-            var patterns = new[]
-            {
-                @"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})",  // 2025-01-15 10:30:45
-                @"^(\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})",  // 2025/01/15 10:30:45
-                @"^(\d{8}\s+\d{2}:\d{2}:\d{2})",              // 20250115 10:30:45
-                @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})",    // 2025-01-15T10:30:45 (ISO)
-            };
+            // 快速檢查：如果行首不是數字，直接返回 null（避免不必要的正則匹配）
+            if (logLine.Length < 4 || !char.IsDigit(logLine[0]))
+                return null;
 
-            foreach (var pattern in patterns)
-            {
-                var match = Regex.Match(logLine, pattern);
-                if (match.Success)
-                {
-                    return match.Groups[1].Value;
-                }
-            }
+            // 使用靜態編譯的 Regex（按最常見的格式順序檢查）
+            Match match;
+
+            match = TimestampRegex1.Match(logLine);
+            if (match.Success) return match.Groups[1].Value;
+
+            match = TimestampRegex2.Match(logLine);
+            if (match.Success) return match.Groups[1].Value;
+
+            match = TimestampRegex3.Match(logLine);
+            if (match.Success) return match.Groups[1].Value;
+
+            match = TimestampRegex4.Match(logLine);
+            if (match.Success) return match.Groups[1].Value;
 
             return null;
         }

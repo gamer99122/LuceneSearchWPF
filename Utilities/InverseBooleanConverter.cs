@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 
-namespace LuceneSearchWPFApp
+namespace LuceneSearchWPFApp.Utilities
 {
     public class InverseBooleanConverter : IValueConverter
     {

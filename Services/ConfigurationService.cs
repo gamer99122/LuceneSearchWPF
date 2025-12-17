@@ -6,11 +6,11 @@ using LuceneSearchWPFApp.Services.Interfaces; // 引入介面
 
 namespace LuceneSearchWPFApp.Services
 {
-    // 公開的設定類別，可以在 ConfigurationService 內部使用，也可以在外部需要時直接訪問其結構
-    // 但載入和實例化應由 ConfigurationService 處理
+    // 公開的設定類別
     public class LuceneSettings
     {
         public string IndexPath { get; set; }
+        public string LocalCachePath { get; set; } // 新增本機快取路徑
         public int MaxSearchResults { get; set; }
 
         public string GetFullIndexPath()
@@ -127,8 +127,7 @@ namespace LuceneSearchWPFApp.Services
                 },
                 UI = new UISettings
                 {
-                    DefaultLogPath = AppDomain.CurrentDomain.BaseDirectory, // 預設為程式執行目錄，具體路徑請由 appsettings.json 設定
-                    //DefaultFileFilter = "ICUploadXML"
+                    DefaultLogPath = AppDomain.CurrentDomain.BaseDirectory, // 預設為程式執行目錄
                 },
                 Editor = new EditorSettings()
             };
@@ -136,10 +135,10 @@ namespace LuceneSearchWPFApp.Services
 
         // IConfigurationService 介面實作
         public string GetFullIndexPath() => _appSettings.Lucene.GetFullIndexPath();
+        public string GetLocalCachePath() => _appSettings.Lucene.LocalCachePath; // 實作新增的方法
         public int GetMaxSearchResults() => _appSettings.Lucene.MaxSearchResults;
         public int GetLogFileEncodingCodePage() => _appSettings.LogFiles.EncodingCodePage;
 
-        // 添加其他需要的配置獲取方法
         public UISettings GetUISettings() => _appSettings.UI;
         public EditorSettings GetEditorSettings() => _appSettings.Editor;
         public LogFileSettings GetLogFileSettings() => _appSettings.LogFiles;
