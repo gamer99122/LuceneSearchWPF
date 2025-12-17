@@ -220,77 +220,279 @@ namespace LuceneSearchWPFApp.ViewModels
 
         
 
-                [RelayCommand]
-
-                private async Task CreateIndex()
-
-                {
-
-                    if (string.IsNullOrWhiteSpace(FolderPath) || !System.IO.Directory.Exists(FolderPath))
-
-                    {
-
-                        MessageBox.Show("Please select a valid folder path.", "Index Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-
-                        return;
-
-                    }
+                                [RelayCommand]
 
         
 
-                    IsIndexing = true;
-
-                    IndexProgressMessage = "Indexing started...";
+                                private async Task CreateIndex()
 
         
 
-                    var progress = new Progress<string>(message =>
-
-                    {
-
-                        IndexProgressMessage = $"Indexing: {message}";
-
-                    });
+                                {
 
         
 
-                    try
-
-                    {
-
-                        // 處理 "全部" 選項，將其視為不過濾 (空字串)
-
-                        string actualFilter = FileFilterKeyword == "全部" ? string.Empty : FileFilterKeyword;
+                                    if (string.IsNullOrWhiteSpace(FolderPath) || !System.IO.Directory.Exists(FolderPath))
 
         
 
-                        await _indexService.CreateIndexAsync(FolderPath, actualFilter, progress);
+                                    {
 
-                        IndexProgressMessage = "Indexing completed successfully.";
+        
 
-                        MessageBox.Show("Indexing completed successfully.", "Index Status", MessageBoxButton.OK, MessageBoxImage.Information);
+                                        MessageBox.Show("Please select a valid folder path.", "Index Error", MessageBoxButton.OK, MessageBoxImage.Warning);
 
-                    }
+        
 
-                    catch (Exception ex)
+                                        return;
 
-                    {
+        
 
-                        IndexProgressMessage = $"Indexing failed: {ex.Message}";
+                                    }
 
-                        MessageBox.Show($"Indexing failed: {ex.Message}", "Index Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        
 
-                    }
+                
 
-                    finally
+        
 
-                    {
+                                    // 驗證是否選擇了日期 (雖然有預設值，但為了安全)
 
-                        IsIndexing = false;
+        
 
-                    }
+                                    if (StartDate == null || EndDate == null)
 
-                }
+        
+
+                                    {
+
+        
+
+                                         MessageBox.Show("請選擇建立索引的日期範圍 (開始日期與結束日期)。", "日期未設定", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+        
+
+                                         return;
+
+        
+
+                                    }
+
+        
+
+                
+
+        
+
+                                    if (StartDate > EndDate)
+
+        
+
+                                    {
+
+        
+
+                                        MessageBox.Show("開始日期不能晚於結束日期。", "日期範圍錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+        
+
+                                        return;
+
+        
+
+                                    }
+
+        
+
+                
+
+        
+
+                                    // 驗證是否選擇了 Filter (關鍵字)
+
+        
+
+                                    // 在新的優化策略中，必須要有 Filter 才能預測檔名。
+
+        
+
+                                    // 如果使用者選 "全部" (FileFilterKeyword 為 "全部" 或空)，我們會提示效能風險
+
+        
+
+                                    string actualFilter = (FileFilterKeyword == "全部" || string.IsNullOrWhiteSpace(FileFilterKeyword)) ? string.Empty : FileFilterKeyword;
+
+        
+
+                
+
+        
+
+                                    if (string.IsNullOrEmpty(actualFilter))
+
+        
+
+                                    {
+
+        
+
+                                        var result = MessageBox.Show(
+
+        
+
+                                            "您未選擇特定的 Filter (檔案類型)。\n\n" +
+
+        
+
+                                            "未指定 Filter 時，系統將無法使用「日期預測優化」，必須掃描資料夾內「所有」檔案，這在網路磁碟上可能會非常緩慢。\n\n" +
+
+        
+
+                                            "確定要繼續嗎？", 
+
+        
+
+                                            "效能警告", 
+
+        
+
+                                            MessageBoxButton.YesNo, 
+
+        
+
+                                            MessageBoxImage.Warning);
+
+        
+
+                
+
+        
+
+                                        if (result == MessageBoxResult.No)
+
+        
+
+                                        {
+
+        
+
+                                            return;
+
+        
+
+                                        }
+
+        
+
+                                    }
+
+        
+
+                
+
+        
+
+                                    IsIndexing = true;
+
+        
+
+                                    IndexProgressMessage = "Indexing started...";
+
+        
+
+                
+
+        
+
+                                    var progress = new Progress<string>(message =>
+
+        
+
+                                    {
+
+        
+
+                                        IndexProgressMessage = $"Indexing: {message}";
+
+        
+
+                                    });
+
+        
+
+                
+
+        
+
+                                    try
+
+        
+
+                                    {
+
+        
+
+                                        // 傳遞日期範圍給 Service
+
+        
+
+                                        await _indexService.CreateIndexAsync(FolderPath, actualFilter, StartDate.Value, EndDate.Value, progress);
+
+        
+
+                                        
+
+        
+
+                                        IndexProgressMessage = "Indexing completed successfully.";
+
+        
+
+                                        MessageBox.Show("Indexing completed successfully.", "Index Status", MessageBoxButton.OK, MessageBoxImage.Information);
+
+        
+
+                                    }
+
+        
+
+                                    catch (Exception ex)
+
+        
+
+                                    {
+
+        
+
+                                        IndexProgressMessage = $"Indexing failed: {ex.Message}";
+
+        
+
+                                        MessageBox.Show($"Indexing failed: {ex.Message}", "Index Error", MessageBoxButton.OK, MessageBoxImage.Error);
+
+        
+
+                                    }
+
+        
+
+                                    finally
+
+        
+
+                                    {
+
+        
+
+                                        IsIndexing = false;
+
+        
+
+                                    }
+
+        
+
+                                }
 
         
 

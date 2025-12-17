@@ -27,7 +27,7 @@ namespace LuceneSearchWPFApp.Services
             _indexPath = _configurationService.GetFullIndexPath(); // 從配置服務獲取路徑
         }
 
-        public async Task CreateIndexAsync(string folderPath, string fileFilterKeyword, IProgress<string> progress)
+        public async Task CreateIndexAsync(string folderPath, string fileFilterKeyword, DateTime startDate, DateTime endDate, IProgress<string> progress)
         {
             if (!System.IO.Directory.Exists(folderPath))
             {
@@ -49,10 +49,66 @@ namespace LuceneSearchWPFApp.Services
 
                     using (var writer = new IndexWriter(directory, config))
                     {
-                        var files = System.IO.Directory.GetFiles(folderPath);
-                        var targetFiles = string.IsNullOrEmpty(fileFilterKeyword)
-                            ? files
-                            : files.Where(f => Path.GetFileName(f).Contains(fileFilterKeyword, StringComparison.OrdinalIgnoreCase)).ToArray();
+                        // 這是核心修改：不再使用 Directory.GetFiles
+                        // 而是根據日期範圍主動生成路徑
+                        var targetFiles = new System.Collections.Generic.List<string>();
+                        var currentDate = startDate.Date;
+                        var today = DateTime.Today;
+
+                        // 定義可能的副檔名
+                        var extensions = new[] { ".txt", ".log" };
+
+                        while (currentDate <= endDate.Date)
+                        {
+                            string dateSuffix = currentDate.ToString("yyyyMMdd");
+                            
+                            // 如果 fileFilterKeyword 為空，我們無法猜測檔名，這時可能還是得退回到 GetFiles，
+                            // 但為了效能，我們假設使用者一定會選 Filter。如果沒選，就只抓標準的 Log 檔名 (視需求而定)
+                            // 這裡假設 fileFilterKeyword 是必填的或是主要的檔名前綴
+                            
+                            if (string.IsNullOrEmpty(fileFilterKeyword))
+                            {
+                                // 如果沒有關鍵字，這個優化策略會失效，因為我們不知道要檢查什麼檔名。
+                                // 為了安全起見，如果沒有 keyword，我們還是退回到原本的 GetFiles 邏輯，或者拋出警告。
+                                // 這裡我們先保留一個簡單的 fallback：不優化，直接掃描 (只針對這一天? 很難)。
+                                // 鑑於效能考量，我們強烈建議使用者選擇 Filter。
+                                // 在此實作中，若無 Keyword，則無法進行「預測」，只能略過或抓全部 (極慢)。
+                                // 我們選擇：如果沒有 Keyword，則執行舊邏輯 (為了相容性)，但只做一次。
+                                var allFiles = System.IO.Directory.GetFiles(folderPath);
+                                targetFiles.AddRange(allFiles);
+                                break; // 既然全抓了，就不用跑日期迴圈了
+                            }
+                            else
+                            {
+                                foreach (var ext in extensions)
+                                {
+                                    // 1. 檢查歷史檔名格式: Name.extYYYYMMDD
+                                    string historyFileName = $"{fileFilterKeyword}{ext}{dateSuffix}";
+                                    string historyPath = Path.Combine(folderPath, historyFileName);
+                                    if (File.Exists(historyPath))
+                                    {
+                                        targetFiles.Add(historyPath);
+                                    }
+
+                                    // 2. 如果這一天是「今天」，也要檢查當日檔名: Name.ext (無日期後綴)
+                                    if (currentDate == today)
+                                    {
+                                        string currentFileName = $"{fileFilterKeyword}{ext}";
+                                        string currentPath = Path.Combine(folderPath, currentFileName);
+                                        // 避免重複加入 (雖然邏輯上不太會重疊，除非日期後綴就是空)
+                                        if (File.Exists(currentPath) && !targetFiles.Contains(currentPath))
+                                        {
+                                            targetFiles.Add(currentPath);
+                                        }
+                                    }
+                                }
+                            }
+
+                            currentDate = currentDate.AddDays(1);
+                        }
+
+                        // 移除重複 (保險起見)
+                        targetFiles = targetFiles.Distinct().ToList();
 
                         foreach (var filePath in targetFiles)
                         {
@@ -64,6 +120,14 @@ namespace LuceneSearchWPFApp.Services
                                 int lineIndex = 0;
 
                                 var fileDate = DateParser.ParseDateFromFileName(fileName);
+                                // 如果檔名解析不出日期 (例如當日檔)，則使用檔案的最後修改時間或創建時間作為備案，
+                                // 或者根據我們剛剛的迴圈邏輯，其實我們知道它是哪一天的。
+                                // 但為了保持一致性，如果 Parse 失敗，我們試著用檔案系統時間。
+                                if (fileDate == null)
+                                {
+                                    fileDate = File.GetLastWriteTime(filePath);
+                                }
+                                
                                 string fileDateStr = fileDate?.ToString("yyyyMMdd") ?? "";
 
                                 var encodingCodePage = _configurationService.GetLogFileEncodingCodePage(); // 從配置服務獲取編碼頁
